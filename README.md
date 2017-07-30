@@ -29,7 +29,8 @@ Also adds support for TB6612FNG motor controller.  Use these broadcasts:
 	* -NN (where NN is a percentage of maximum reverse speed)
 	* stop (synonymous with speed 0)
 	* brake (invokes the controller brake function)
-   e.g. "setmotor leftmotor 50", "setmotor rightmotor -25", "setmotor leftmotor stop"
+
+e.g. "setmotor leftmotor 50", "setmotor rightmotor -25", "setmotor leftmotor stop"
 
 Uses the Firmata library https://github.com/simlrh/firmatacpp and for Bluetooth support, https://github.com/edrosten/libblepp.
 
