@@ -73,6 +73,17 @@ bool s_debug = 0;
         __s << "DBG:" << syscall(SYS_gettid) << ":" << __FILE__ ":" << __LINE__ << ":" << __FUNCTION__ << ":" << __x << std::endl; \
         std::cerr <<__s.str(); \
     }
+#define ERR(__x...) \
+    if (1) { \
+        std::ostringstream __s; \
+        size_t __t; \
+        __s << "ERR:" << syscall(SYS_gettid) << ":" << __FILE__ ":" << __LINE__ << ":" << __FUNCTION__ << ":"; \
+        __t = __s.str().size(); \
+        __s << __x; \
+        report_error(__s.str().substr(__t)); \
+        __s << std::endl; \
+        std::cerr <<__s.str(); \
+    }
 
 
 bool stopping = false;
@@ -103,6 +114,15 @@ firmata::FirmBle* bleio = nullptr;
 #endif
 firmata::FirmSerial* serialio = nullptr;
 
+// report an error back to scratch, if possible
+void write_scratch_message(const std::string &msgtype, const std::string &label, const std::string &value);
+void report_error(const std::string & msg)
+{
+    if (scratch_fd != -1)
+    {
+        write_scratch_message("sensor-update", "error-message", msg);
+    }
+}
 
 // reset timer to send next sensor updates
 void reset_timeout()
@@ -224,7 +244,7 @@ bool connect_firmata()
                 DBG("bluetooth now connected");
                 f->init();
             } else {
-                DBG("bluetooth connect failed");
+                ERR("bluetooth connect failed");
                 return false;
             }
         }
@@ -243,7 +263,7 @@ bool connect_firmata()
                 DBG("serial now connected");
                 f->init();
             } else {
-                DBG("serial connect failed");
+                ERR("serial connect failed");
                 return false;
             }
         }
@@ -287,9 +307,9 @@ int do_poll()
 
     result = select(fd_max+1, &read_set, &write_set, nullptr, &tv);
 
-    if (result < 0)
+    if ((result < 0) && (errno != EINTR))
     {
-        DBG("select failed, "<<strerror(errno));
+        ERR("select failed, "<<strerror(errno));
         disconnect_scratch();
     } else if (result == 0) {
         reset_timeout();
@@ -328,7 +348,7 @@ void pinmode(uint8_t pin, uint8_t mode)
         }
         else
         {
-            DBG("pin "<<(int)pin<<" does not support mode "<<(int)mode);
+            ERR("pin "<<(int)pin<<" does not support mode "<<(int)mode);
             return;
         }
     }
@@ -396,10 +416,10 @@ int process_pin(const std::string &t1, const std::string &t2)
     } else if ((t2 == "on") || (t2 == "high") || (t2 == "1")) {
         value = 1;
     } else if (!t2.empty()) {
-        DBG("Failed to parse required pin state");
+        ERR("Failed to parse required pin state from "<<t2);
         return 0;
     } else {
-        DBG("Failed to parse required pin state");
+        ERR("Failed to parse required pin state from "<<t1);
         return 0;
     }
     unsigned int pin = getpin(t1,3,end);
@@ -431,7 +451,7 @@ int process_adc(const std::string &t1, const std::string &t2)
     } else if (t2 == "on") {
         value = 1;
     } else if (!t2.empty()) {
-        DBG("Failed to parse required pin state");
+        ERR("Failed to parse required pin state from "<<t2);
         return 0;
     }
     unsigned int apin = getpin(t1,3,end);
@@ -466,10 +486,10 @@ int process_config(const std::string &t1, const std::string &t2)
     } else if (t2 == "in") {
         value = MODE_INPUT;
     } else if (!t2.empty()) {
-        DBG("Failed to parse required pin state");
+        ERR("Failed to parse required pin state from "<<t2);
         return 0;
     } else {
-        DBG("Failed to parse required pin state");
+        ERR("Failed to parse required pin state from "<<t1);
         return 0;
     }
     unsigned int pin = getpin(t1,6,end);
@@ -529,7 +549,7 @@ int process_pin_percent(int pin, const std::string &t2, uint8_t mode)
     }
     else
     {
-        DBG("No pin capability for mode "<<(int)mode);
+        ERR("No pin capability for mode "<<(int)mode);
     }
     return 0;
 }
@@ -586,7 +606,7 @@ int process_allpins(const std::string &t1, const std::string &t2)
     } else if ((t2 == "on") || (t2 == "high") || (t2 == "1")) {
         value = 1;
     } else if (!t2.empty()) {
-        DBG("Failed to parse required pin state");
+        ERR("Failed to parse required pin state from "<<t2);
         return 0;
     }
     // find all digital IO pins and iterate over them
@@ -633,7 +653,7 @@ int process_setmotor(const std::string &t1, const std::string &t2)
     std::map<std::string,tb6612fng>::iterator i = tb6612fng_list.find(t1);
     if (i == tb6612fng_list.end())
     {
-        DBG("Failed to find motor entry "<<t1);
+        ERR("Failed to find motor entry "<<t1);
         return 0;
     }
     DBG("Setting motor "<<t1<<" to "<<t2);
@@ -710,7 +730,7 @@ int process_defmotor(const std::string &t1, const std::string &t2)
     }
     if (j != 4)
     {
-        DBG("Failed to parse motor definition");
+        ERR("Failed to parse motor definition from "<<t2);
         return 0;
     }
     tb6612fng_list[name].in1 = pin1;
@@ -774,7 +794,7 @@ void read_scratch_message()
     if (read(scratch_fd,&c,4) != 4)
     {
         // something bad happened
-        DBG("failed to read from scratch, "<<strerror(errno));
+        ERR("failed to read from scratch, "<<strerror(errno));
         disconnect_scratch();
         return;
     }
@@ -785,7 +805,7 @@ void read_scratch_message()
     unsigned char * msgbuf = (unsigned char *)malloc(msglen+1);
     if (read(scratch_fd, msgbuf, msglen) != msglen)
     {
-        DBG("failed to read from scratch, "<<strerror(errno));
+        ERR("failed to read from scratch, "<<strerror(errno));
         free(msgbuf);
         disconnect_scratch();
         return;
@@ -831,7 +851,7 @@ void read_scratch_message()
                         broadcast = true;
                         DBG("Is broadcast");
                     } else if (token != "sensor-update") {
-                        DBG("Failed to find message type in "<<token);
+                        ERR("Failed to find message type in "<<token);
                         break;
                     }
                 }
@@ -873,7 +893,7 @@ void read_scratch_message()
         DBG("Processing token "<<tokens[i]);
         k = process_scratch(tokens[i],tokens[i+1]);
         if (k == 0) {
-            DBG("Failed to parse token "<<i<<" "<<tokens[i]);
+            ERR("Failed to parse token "<<i<<" "<<tokens[i]);
             // failed to parse the command
             // for a broadcast, skip one token, for sensor-update skip 2
             if (broadcast) { k = 1; } else { k = 2; }
@@ -891,18 +911,8 @@ void read_scratch_message()
 
 // msg format is
 // XXXX:msgtype "label" [value]
-void write_scratch_message(const std::string &msgtype, const std::string &label, int pin, uint32_t value)
+void write_to_scratch(const std::ostringstream & msg)
 {
-    std::ostringstream msg;
-    msg << msgtype;
-    msg << " ";
-    msg << label;
-    msg << pin;
-    if (msgtype == "sensor-update") {
-        msg << " ";
-        msg << value;
-    }
-
     DBG("writing: "<<msg.str());
     unsigned int len = msg.str().size();
     std::string msgbuf;
@@ -914,9 +924,40 @@ void write_scratch_message(const std::string &msgtype, const std::string &label,
 
     if (write(scratch_fd, msgbuf.c_str(), msgbuf.size()) != msgbuf.size())
     {
-        DBG("Failed to write message to scratch");
+        ERR("Failed to write message to scratch");
         disconnect_scratch();
     }
+}
+
+void write_scratch_message(const std::string &msgtype, const std::string &label, const std::string &value)
+{
+    std::ostringstream msg;
+    msg << msgtype;
+    msg << " \"";
+    msg << label;
+    msg << "\"";
+    if (msgtype == "sensor-update") {
+        msg << " \"";
+        msg << value;
+        msg << "\"";
+    }
+    write_to_scratch(msg);
+}
+
+void write_scratch_message(const std::string &msgtype, const std::string &label, int pin, uint32_t value)
+{
+    std::ostringstream msg;
+    msg << msgtype;
+    msg << " ";
+    if (label.find(' ')) { msg << "\""; }
+    msg << label;
+    msg << pin;
+    if (label.find(' ')) { msg << "\""; }
+    if (msgtype == "sensor-update") {
+        msg << " ";
+        msg << value;
+    }
+    write_to_scratch(msg);
 }
 
 // send all interesting pin states to scratch
@@ -939,6 +980,10 @@ void write_scratch()
         }
     }
 }
+
+//////////////////////////////////////////////////////////////////////
+//
+// main loop and arg handling
 
 void usage(const char * progname, const char * msg = nullptr, int ec = 1)
 {
@@ -1122,13 +1167,18 @@ int main(int argc, char * argv[])
             catch (...)
             {
                 // caught exception, close firmata
-                DBG("looks like firmata closed on us");
+                ERR("looks like firmata closed on us");
                 // wait a while and try again
                 sleep(1);
             }
         }
 
         DBG("Exited inner loop");
+
+        if (scratch_fd >= 0) {
+            ERR("Firmata bridge is shut down");
+        }
+
         // scratch went away or we are stopping
         disconnect_firmata();
         disconnect_scratch();
