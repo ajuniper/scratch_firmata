@@ -3,6 +3,11 @@ Daemon to connect MIT Scratch to a Firmata board.  Inspired by http://simplesi.n
 
 In scratch use either variables or broadcasts to interact with hardware as documented on the above site.
 
+Uses the Firmata library https://github.com/simlrh/firmatacpp and for Bluetooth support, https://github.com/edrosten/libblepp.
+
+Tested only on Galileo 101.
+
+
 Variables:
  * pinNN 0/1/on/off/high/low
  * allpins 0/1/on/off/high/low
@@ -32,9 +37,7 @@ Also adds support for TB6612FNG motor controller.  Use these broadcasts:
 
 e.g. "setmotor leftmotor 50", "setmotor rightmotor -25", "setmotor leftmotor stop"
 
-Uses the Firmata library https://github.com/simlrh/firmatacpp and for Bluetooth support, https://github.com/edrosten/libblepp.
-
-Tested only on Galileo 101.
+Errors in the daemon are reported to Scratch via the "error-message" sensor value which is sent whenever it changes.
 
 Building:
  * Download and build firmatacpp with Bluetooth support from the above location.  The makefile assumes it will be unpacked and built in ~/firmatacpp-master/ - override this by setting firmatadir=/x/x/x on the Make invocation if required.  Note that at present the code there doesn't yet include Bluetooth support so you make need to download from my fork https://github.com/ajuniper/firmatacpp instead.
