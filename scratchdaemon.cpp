@@ -209,23 +209,90 @@ bool connected_to_firmata()
 
     return true;
 }
-bool connect_firmata()
+
+void disconnect_firmata()
 {
-    if (f == nullptr)
-    {
-        ERR("Opening firmata");
-#ifndef NO_BLUETOOTH
-        if (bleio != nullptr)
-        {
-            f = new firmata::Firmata<firmata::Base, firmata::I2C>(bleio);
-        }
-#endif
-        if (serialio != nullptr)
-        {
-            f = new firmata::Firmata<firmata::Base, firmata::I2C>(serialio);
-        }
-        // firmata constructor called open()
+    if (connected_to_firmata()) {
+        DBG("Disconnecting firmata");
+        std::vector<unsigned char> r;
+        r.push_back(FIRMATA_SYSTEM_RESET);
+        f->standardCommand(r);
     }
+    if (f != nullptr) {
+        DBG("Deleting firmata");
+        // the act of deleting the firmata object will also destroy
+        // the IO object too
+        delete(f);
+        f = nullptr;
+#ifndef NO_BLUETOOTH
+        bleio = nullptr;
+#endif
+        serialio = nullptr;
+    }
+}
+
+// connect to firmata
+// p1 = conn type, 1 = serial, 2/3 = Bluetooth
+// p2 = port
+bool connect_firmata(int type, const std::string & port)
+{
+    // ensure properly disconnected first
+    disconnect_firmata();
+
+    // setup bleio/serialio
+    switch (type)
+    {
+        case 1: // serial
+            DBG("connecting to serial port "<<port);
+            try
+            {
+                if (serialio) {
+                    delete serialio;
+                }
+                serialio = new firmata::FirmSerial(port.c_str());
+            }
+            catch (...)
+            {
+                ERR("Failed to open serial port "<<port);
+            }
+
+            break;
+
+#ifndef NO_BLUETOOTH
+        case 3: // first bluetooth (port already set up)
+        case 2: // specified bluetooth
+            DBG("connecting to "<<port);
+            try
+            {
+                if (bleio) {
+                    delete bleio;
+                }
+                bleio = new firmata::FirmBle(port.c_str());
+            }
+            catch (...)
+            {
+                ERR("Failed to connect to Bluetooth device "<<port);
+            }
+            break;
+#endif
+    }
+
+    if (f) {
+        delete f;
+    }
+
+    ERR("Opening firmata");
+#ifndef NO_BLUETOOTH
+    if (bleio != nullptr)
+    {
+        f = new firmata::Firmata<firmata::Base, firmata::I2C>(bleio);
+    }
+#endif
+    if (serialio != nullptr)
+    {
+        f = new firmata::Firmata<firmata::Base, firmata::I2C>(serialio);
+    }
+    // firmata constructor called open()
     if (f == nullptr)
     {
         ERR("failed to instantiate firmata connection");
@@ -272,16 +339,9 @@ bool connect_firmata()
     ERR("Firmata connected and ready");
     f->setSamplingInterval(samplingInterval);
     read_pinstates();
+    sleep(1);
     reset_timeout();
     return true;
-}
-
-void disconnect_firmata()
-{
-    std::vector<unsigned char> r;
-    r.push_back(FIRMATA_SYSTEM_RESET);
-    f->standardCommand(r);
-    delete(f);
 }
 
 void disconnect_scratch()
@@ -1060,19 +1120,7 @@ int main(int argc, char * argv[])
             break;
 
         case 1: // serial
-            DBG("connecting to serial port "<<port);
-            try
-            {
-            serialio = new firmata::FirmSerial(port.c_str());
-            }
-            catch (...)
-            {
-                std::string e("Failed to open serial port ");
-                e.append(port);
-                usage(argv[0],e.c_str());
-            }
-
-            //f = new firmata::Firmata<firmata::Base, firmata::I2C>(serialio);
+            DBG("Using serial port "<<port);
             break;
 
 #ifndef NO_BLUETOOTH
@@ -1095,19 +1143,7 @@ int main(int argc, char * argv[])
             // fall thru
 
         case 2: // specified bluetooth
-            DBG("connecting to "<<port);
-            try
-            {
-                bleio = new firmata::FirmBle(port.c_str());
-                //f = new firmata::Firmata<firmata::Base, firmata::I2C>(bleio);
-            }
-            catch (...)
-            {
-                std::string e("Failed to connect to Bluetooth device ");
-                e.append(port);
-                usage(argv[0],e.c_str());
-            }
-            break;
+            DBG("Using Bluetooth device "<<port);
 #endif
 
     }
@@ -1139,9 +1175,7 @@ int main(int argc, char * argv[])
             if (!connected_to_firmata())
             {
                 DBG("Connecting to firmata");
-                connect_firmata();
-                DBG("Connected to firmata");
-                read_pinstates();
+                connect_firmata(conntype, port);
             }
 
             int n = do_poll();
@@ -1167,6 +1201,7 @@ int main(int argc, char * argv[])
             {
                 // caught exception, close firmata
                 ERR("Firmata connection closed");
+                disconnect_firmata();
                 // wait a while and try again
                 sleep(1);
             }
