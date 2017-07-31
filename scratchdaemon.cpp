@@ -97,6 +97,58 @@ struct timeval tv;
 typedef std::function<int (const std::string&, const std::string&)> cmdfunc;
 std::map<std::string,cmdfunc> custom_commands;
 
+firmata::Firmata<firmata::Base, firmata::I2C>* f = nullptr;
+#ifndef NO_BLUETOOTH
+firmata::FirmBle* bleio = nullptr;
+#endif
+firmata::FirmSerial* serialio = nullptr;
+
+
+// reset timer to send next sensor updates
+void reset_timeout()
+{
+    tv.tv_sec = (samplingInterval / 1000);
+    tv.tv_usec = (samplingInterval * 1000) % 1000000;
+}
+
+// read all current pin modes
+void read_pinstates()
+{
+    // no actual action required as firmata lib does this for us
+    numPins = f->getNumPins();
+    DBG("Found "<<numPins<<" pins");
+
+    for (int pin=0; pin<numPins; ++pin)
+    {
+        const std::vector<uint8_t> &caps(f->getPinCaps(pin));
+        std::string comma;
+        std::cout << pin << ": ";
+        std::vector<uint8_t>::const_iterator i = caps.begin();
+        while (i != caps.end())
+        {
+            std::cout << comma;
+            switch (*i)
+            {
+                case 0: std::cout << "Input"; break;
+                case 1: std::cout << "Output"; break;
+                case 2: std::cout << "Analog"; break;
+                case 3: std::cout << "PWM"; break;
+                case 4: std::cout << "Servo"; break;
+                case 5: std::cout << "Shift"; break;
+                case 6: std::cout << "I2C"; break;
+                case 7: std::cout << "Onewire"; break;
+                case 8: std::cout << "Stepper"; break;
+                case 10: std::cout << "Serial"; break;
+                case 11: std::cout << "Pullup"; break;
+                case 127: std::cout << "Ignore"; break;
+                default: std::cout << "(" << (int)(*i)<<")"; break;
+            }
+            comma=",";
+            ++i;
+        }
+        std::cout << std::endl;
+    }
+}
 
 void wait_for_scratch()
 {
@@ -112,13 +164,8 @@ void wait_for_scratch()
         DBG("waiting for scratch, errno "<<strerror(errno));
         sleep(10);
     }
+    DBG("Connected to scratch");
 }
-
-firmata::Firmata<firmata::Base, firmata::I2C>* f = nullptr;
-#ifndef NO_BLUETOOTH
-firmata::FirmBle* bleio = nullptr;
-#endif
-firmata::FirmSerial* serialio = nullptr;
 
 bool connected_to_firmata()
 {
@@ -204,6 +251,8 @@ bool connect_firmata()
 
     DBG("firmata connected and ready");
     f->setSamplingInterval(samplingInterval);
+    read_pinstates();
+    reset_timeout();
     return true;
 }
 
@@ -223,12 +272,6 @@ void disconnect_scratch()
         close(scratch_fd);
         scratch_fd = -1;
     }
-}
-
-void reset_timeout()
-{
-    tv.tv_sec = (samplingInterval / 1000);
-    tv.tv_usec = (samplingInterval * 1000) % 1000000;
 }
 
 int do_poll()
@@ -255,44 +298,9 @@ int do_poll()
     return result;
 }
 
-// read all current pin modes
-void read_pinstates()
-{
-    // no actual action required as firmata lib does this for us
-    numPins = f->getNumPins();
-    DBG("Found "<<numPins<<" pins");
-
-    for (int pin=0; pin<numPins; ++pin)
-    {
-        const std::vector<uint8_t> &caps(f->getPinCaps(pin));
-        std::string comma;
-        std::cout << pin << ": ";
-        std::vector<uint8_t>::const_iterator i = caps.begin();
-        while (i != caps.end())
-        {
-            std::cout << comma;
-            switch (*i)
-            {
-                case 0: std::cout << "Input"; break;
-                case 1: std::cout << "Output"; break;
-                case 2: std::cout << "Analog"; break;
-                case 3: std::cout << "PWM"; break;
-                case 4: std::cout << "Servo"; break;
-                case 5: std::cout << "Shift"; break;
-                case 6: std::cout << "I2C"; break;
-                case 7: std::cout << "Onewire"; break;
-                case 8: std::cout << "Stepper"; break;
-                case 10: std::cout << "Serial"; break;
-                case 11: std::cout << "Pullup"; break;
-                case 127: std::cout << "Ignore"; break;
-                default: std::cout << "(" << (int)(*i)<<")"; break;
-            }
-            comma=",";
-            ++i;
-        }
-        std::cout << std::endl;
-    }
-}
+//////////////////////////////////////////////////////////////////////////
+//
+// Handling commands from scratch
 
 // set pin mode in firmata if required
 void pinmode(uint8_t pin, uint8_t mode)
@@ -414,23 +422,23 @@ int process_adc(const std::string &t1, const std::string &t2)
     int ret = 2;
     size_t end = std::string::npos;
     DBG("Parsing from "<<t1<<" "<<t2);
-    if (t2 == "off") {
+    if (ends_in(t1,off)) {
+        value = 0;
+        end = t1.size() - 3;
+        ret = 1;
+    } else if (t2 == "off") {
         value = 0;
     } else if (t2 == "on") {
         value = 1;
     } else if (!t2.empty()) {
         DBG("Failed to parse required pin state");
         return 0;
-    } else if (ends_in(t1,off)) {
-        value = 0;
-        end = t1.size() - 3;
-        ret = 1;
     }
     unsigned int apin = getpin(t1,3,end);
     unsigned int pin = f->getPinFromAnalogChannel(apin);
     DBG("pin "<<pin<<" apin "<<apin<<" value "<<value);
     pinmode(pin, MODE_ANALOG);
-    myPins[pin] = true;
+    myPins[pin] = (value==1)?true:false;
     f->reportAnalog(apin,value);
     return ret;
 }
@@ -445,14 +453,7 @@ int process_config(const std::string &t1, const std::string &t2)
     int ret = 2;
     size_t end = std::string::npos;
     DBG("Parsing from "<<t1<<" "<<t2);
-    if (t2 == "out") {
-        value = MODE_OUTPUT;
-    } else if (t2 == "in") {
-        value = MODE_INPUT;
-    } else if (!t2.empty()) {
-        DBG("Failed to parse required pin state");
-        return 0;
-    } else if (ends_in(t1,out)) {
+    if (ends_in(t1,out)) {
         value = MODE_OUTPUT;
         end = t1.size() - 3;
         ret = 1;
@@ -460,6 +461,13 @@ int process_config(const std::string &t1, const std::string &t2)
         value = MODE_INPUT;
         end = t1.size() - 2;
         ret = 1;
+    } else if (t2 == "out") {
+        value = MODE_OUTPUT;
+    } else if (t2 == "in") {
+        value = MODE_INPUT;
+    } else if (!t2.empty()) {
+        DBG("Failed to parse required pin state");
+        return 0;
     } else {
         DBG("Failed to parse required pin state");
         return 0;
@@ -753,57 +761,6 @@ int process_scratch(const std::string &t1, const std::string &t2 = "")
     return 0;
 }
 
-// msg format is
-// XXXX:msgtype "label" [value]
-void write_scratch_message(const std::string &msgtype, const std::string &label, int pin, uint32_t value)
-{
-    std::ostringstream msg;
-    msg << msgtype;
-    msg << " ";
-    msg << label;
-    msg << pin;
-    if (msgtype == "sensor-update") {
-        msg << " ";
-        msg << value;
-    }
-
-    DBG("writing: "<<msg.str());
-    unsigned int len = msg.str().size();
-    std::string msgbuf;
-    msgbuf.append(1, (char)(len>>24));
-    msgbuf.append(1, (char)((len >> 16) & 0xff));
-    msgbuf.append(1, (char)((len >> 8) & 0xff));
-    msgbuf.append(1, (char)(len & 0xff));
-    msgbuf.append(msg.str());
-
-    if (write(scratch_fd, msgbuf.c_str(), msgbuf.size()) != msgbuf.size())
-    {
-        DBG("Failed to write message to scratch");
-        disconnect_scratch();
-    }
-}
-
-// send all interesting pin states to scratch
-void write_scratch()
-{
-    for (int i = 0; i<numPins; ++i)
-    {
-        //DBG("Checking pin "<<i);
-        if (myPins[i] == true)
-        {
-            switch (f->getPinMode(i))
-            {
-                case MODE_ANALOG:
-                    write_scratch_message("sensor-update", "adc", f->getPinAnalogChannel(i), f->analogRead(i));
-                    break;
-                case MODE_INPUT:
-                    write_scratch_message("sensor-update", "input", i, f->digitalRead(i));
-                    break;
-            }
-        }
-    }
-}
-
 void read_scratch_message()
 {
     // msg format is
@@ -917,13 +874,70 @@ void read_scratch_message()
         k = process_scratch(tokens[i],tokens[i+1]);
         if (k == 0) {
             DBG("Failed to parse token "<<i<<" "<<tokens[i]);
-            break;
+            // failed to parse the command
+            // for a broadcast, skip one token, for sensor-update skip 2
+            if (broadcast) { k = 1; } else { k = 2; }
         }
         DBG("Consuming "<<k<<" tokens");
         i+=k;
     }
 
     free(msgbuf);
+}
+
+//////////////////////////////////////////////////////////////////////
+//
+// Sending data to scratch
+
+// msg format is
+// XXXX:msgtype "label" [value]
+void write_scratch_message(const std::string &msgtype, const std::string &label, int pin, uint32_t value)
+{
+    std::ostringstream msg;
+    msg << msgtype;
+    msg << " ";
+    msg << label;
+    msg << pin;
+    if (msgtype == "sensor-update") {
+        msg << " ";
+        msg << value;
+    }
+
+    DBG("writing: "<<msg.str());
+    unsigned int len = msg.str().size();
+    std::string msgbuf;
+    msgbuf.append(1, (char)(len>>24));
+    msgbuf.append(1, (char)((len >> 16) & 0xff));
+    msgbuf.append(1, (char)((len >> 8) & 0xff));
+    msgbuf.append(1, (char)(len & 0xff));
+    msgbuf.append(msg.str());
+
+    if (write(scratch_fd, msgbuf.c_str(), msgbuf.size()) != msgbuf.size())
+    {
+        DBG("Failed to write message to scratch");
+        disconnect_scratch();
+    }
+}
+
+// send all interesting pin states to scratch
+void write_scratch()
+{
+    for (int i = 0; i<numPins; ++i)
+    {
+        //DBG("Checking pin "<<i);
+        if (myPins[i] == true)
+        {
+            switch (f->getPinMode(i))
+            {
+                case MODE_ANALOG:
+                    write_scratch_message("sensor-update", "adc", f->getPinAnalogChannel(i), f->analogRead(i));
+                    break;
+                case MODE_INPUT:
+                    write_scratch_message("sensor-update", "input", i, f->digitalRead(i));
+                    break;
+            }
+        }
+    }
 }
 
 void usage(const char * progname, const char * msg = nullptr, int ec = 1)
@@ -1014,7 +1028,7 @@ int main(int argc, char * argv[])
                 usage(argv[0],e.c_str());
             }
 
-            f = new firmata::Firmata<firmata::Base, firmata::I2C>(serialio);
+            //f = new firmata::Firmata<firmata::Base, firmata::I2C>(serialio);
             break;
 
 #ifndef NO_BLUETOOTH
@@ -1041,7 +1055,7 @@ int main(int argc, char * argv[])
             try
             {
                 bleio = new firmata::FirmBle(port.c_str());
-                f = new firmata::Firmata<firmata::Base, firmata::I2C>(bleio);
+                //f = new firmata::Firmata<firmata::Base, firmata::I2C>(bleio);
             }
             catch (...)
             {
@@ -1067,8 +1081,6 @@ int main(int argc, char * argv[])
     scratch_addr.sin_addr = *(struct in_addr *) hostinfo->h_addr;
 
     sleep(3);
-    read_pinstates();
-    reset_timeout();
 
     signal(SIGINT, do_stop);
     signal(SIGTERM, do_stop);
