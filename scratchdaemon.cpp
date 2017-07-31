@@ -20,11 +20,8 @@
  *         alloff
  *
  * TODO:
- *     deal with sensor-update n1 v1 n2 v2 n3 v3 ...
- *     add support for broadcast "defmotor name p p p"
  *     test allon
  *     test servo
- *     why abort when g101 reset?
  *
  *     http://simplesi.net/scratchgpio/scratchgpio-1st-project/
  *     broadcast supports:
@@ -97,7 +94,7 @@ int numPins = -1;
 bool myPins[256];
 bool reportingset[256];
 struct timeval tv;
-typedef std::function<void (const std::string&, const std::string&)> cmdfunc;
+typedef std::function<int (const std::string&, const std::string&)> cmdfunc;
 std::map<std::string,cmdfunc> custom_commands;
 
 
@@ -363,33 +360,37 @@ unsigned int getpin(const std::string &s, size_t ofs, size_t end = std::string::
 // pin1on / pin9 off
 // p1=cmd p2=value
 // value absent = parse from number
-void process_pin(const std::string &t1, const std::string &t2)
+int process_pin(const std::string &t1, const std::string &t2)
 {
     unsigned int value;
+    int ret = 2; // assume consume 2 tokens
     size_t end = std::string::npos;
     DBG("Parsing from "<<t1<<" "<<t2);
-    if ((t2 == "off") || (t2 == "low") || (t2 == "0")) {
+    if (ends_in(t1,off)) {
+        value = 0;
+        end = t1.size() - 3;
+        ret = 1;
+    } else if (ends_in(t1,on)) {
+        value = 1;
+        end = t1.size() - 2;
+        ret = 1;
+    } else if ((t2 == "off") || (t2 == "low") || (t2 == "0")) {
         value = 0;
     } else if ((t2 == "on") || (t2 == "high") || (t2 == "1")) {
         value = 1;
     } else if (!t2.empty()) {
         DBG("Failed to parse required pin state");
-        return;
-    } else if (ends_in(t1,off)) {
-        value = 0;
-        end = t1.size() - 3;
-    } else if (ends_in(t1,on)) {
-        value = 1;
-        end = t1.size() - 2;
+        return 0;
     } else {
         DBG("Failed to parse required pin state");
-        return;
+        return 0;
     }
     unsigned int pin = getpin(t1,3,end);
     DBG("pin "<<pin<<" set to "<<value);
     pinmode(pin, MODE_OUTPUT);
     myPins[pin] = false;
     f->digitalWrite(pin,value);
+    return ret;
 }
 
 // enable reporting for ADC pin
@@ -397,10 +398,11 @@ void process_pin(const std::string &t1, const std::string &t2)
 // p1=cmd p2=value
 // value absent = parse from number
 // pin provided is analog pin we must map to digital
-void process_adc(const std::string &t1, const std::string &t2)
+int process_adc(const std::string &t1, const std::string &t2)
 {
     // default to enable
     unsigned int value = 1;
+    int ret = 2;
     size_t end = std::string::npos;
     DBG("Parsing from "<<t1<<" "<<t2);
     if (t2 == "off") {
@@ -409,10 +411,11 @@ void process_adc(const std::string &t1, const std::string &t2)
         value = 1;
     } else if (!t2.empty()) {
         DBG("Failed to parse required pin state");
-        return;
+        return 0;
     } else if (ends_in(t1,off)) {
         value = 0;
         end = t1.size() - 3;
+        ret = 1;
     }
     unsigned int apin = getpin(t1,3,end);
     unsigned int pin = f->getPinFromAnalogChannel(apin);
@@ -420,15 +423,17 @@ void process_adc(const std::string &t1, const std::string &t2)
     pinmode(pin, MODE_ANALOG);
     myPins[pin] = true;
     f->reportAnalog(apin,value);
+    return ret;
 }
 
 // set ddr
 // config1in / config2 out
 // p1=cmd p2=value
 // value absent = parse from number
-void process_config(const std::string &t1, const std::string &t2)
+int process_config(const std::string &t1, const std::string &t2)
 {
     unsigned int value;
+    int ret = 2;
     size_t end = std::string::npos;
     DBG("Parsing from "<<t1<<" "<<t2);
     if (t2 == "out") {
@@ -437,16 +442,18 @@ void process_config(const std::string &t1, const std::string &t2)
         value = MODE_INPUT;
     } else if (!t2.empty()) {
         DBG("Failed to parse required pin state");
-        return;
+        return 0;
     } else if (ends_in(t1,out)) {
         value = MODE_OUTPUT;
         end = t1.size() - 3;
+        ret = 1;
     } else if (ends_in(t1,in)) {
         value = MODE_INPUT;
         end = t1.size() - 2;
+        ret = 1;
     } else {
         DBG("Failed to parse required pin state");
-        return;
+        return 0;
     }
     unsigned int pin = getpin(t1,6,end);
     DBG("pin "<<pin<<" value "<<value);
@@ -454,12 +461,13 @@ void process_config(const std::string &t1, const std::string &t2)
     if (value == MODE_INPUT) {
         myPins[pin] = true;
     }
+    return ret;
 }
 
 // set pwm value
 // pwmNN val
 // p1=number p2=value%
-void process_pwm(const std::string &t1, const std::string &t2)
+int process_pwm(const std::string &t1, const std::string &t2)
 {
     DBG("Parsing from "<<t1<<" "<<t2);
     unsigned int pin = getpin(t1,3);
@@ -467,12 +475,13 @@ void process_pwm(const std::string &t1, const std::string &t2)
     DBG("pin "<<pin<<" value "<<value);
     pinmode(pin, MODE_PWM);
     f->analogWrite(pin,value);
+    return 2;
 }
 
 // set servo value
 // servoNN val
 // p1=number p2=value%
-void process_servo(const std::string &t1, const std::string &t2)
+int process_servo(const std::string &t1, const std::string &t2)
 {
     DBG("Parsing from "<<t1<<" "<<t2);
     unsigned int pin = getpin(t1,5);
@@ -480,18 +489,18 @@ void process_servo(const std::string &t1, const std::string &t2)
     DBG("pin "<<pin);
     pinmode(pin, MODE_SERVO);
     f->analogWrite(pin,value);
+    return 2;
 }
 
 int process_pin_percent(int pin, const std::string &t2, uint8_t mode)
 {
     int value = std::stoul(t2);
     DBG("pin "<<pin<<" raw value "<<value);
-    if (value < 0) value = -value;
     uint32_t resolution = f->getPinCapResolution(pin,mode);
     if (resolution > 0)
     {
         uint32_t max = (1<<resolution);
-        uint32_t scaled = (max * value) / 100;
+        uint32_t scaled = (max * abs(value)) / 100;
         if (scaled >= max)
         {
             scaled = max-1;
@@ -503,7 +512,7 @@ int process_pin_percent(int pin, const std::string &t2, uint8_t mode)
     }
     else
     {
-        DBG("No pin capability for mode "<<mode);
+        DBG("No pin capability for mode "<<(int)mode);
     }
     return 0;
 }
@@ -531,9 +540,10 @@ void process_pin_percent(const std::string &t1, const std::string &t2, size_t ba
 // motorB = motor12
 // motorNN val
 // p1=number p2=value
-void process_motor(const std::string &t1, const std::string &t2)
+int process_motor(const std::string &t1, const std::string &t2)
 {
     process_pin_percent(t1, t2, 5, MODE_PWM);
+    return 2;
 }
 
 // power - alias for pwm
@@ -541,14 +551,15 @@ void process_motor(const std::string &t1, const std::string &t2)
 // powerB = power12
 // powerNN val
 // p1=number p2=value
-void process_power(const std::string &t1, const std::string &t2)
+int process_power(const std::string &t1, const std::string &t2)
 {
     process_pin_percent(t1, t2, 5, MODE_PWM);
+    return 2;
 }
 
 // set all pins
 // allpins value
-void process_allpins(const std::string &t1, const std::string &t2)
+int process_allpins(const std::string &t1, const std::string &t2)
 {
     unsigned int value;
     size_t end = std::string::npos;
@@ -559,7 +570,7 @@ void process_allpins(const std::string &t1, const std::string &t2)
         value = 1;
     } else if (!t2.empty()) {
         DBG("Failed to parse required pin state");
-        return;
+        return 0;
     }
     // find all digital IO pins and iterate over them
     for (uint8_t pin = 0; pin<numPins; ++pin)
@@ -571,20 +582,23 @@ void process_allpins(const std::string &t1, const std::string &t2)
             f->digitalWrite(pin, value);
         }
     }
+    return 2;
 }
 
 // set all pins on
 // allpins value
-void process_allon(const std::string &t1, const std::string &t2)
+int process_allon(const std::string &t1, const std::string &t2)
 {
     process_allpins("allpins","on");
+    return 1;
 }
 
 // set all pins off
 // allpins value
-void process_alloff(const std::string &t1, const std::string &t2)
+int process_alloff(const std::string &t1, const std::string &t2)
 {
     process_allpins("allpins","off");
+    return 1;
 }
 
 typedef struct
@@ -597,13 +611,13 @@ std::map<std::string,tb6612fng> tb6612fng_list;
 
 // motorname = custom name for motor
 // motorname % or motorname -% or motorname stop or motorname brake
-void process_setmotor(const std::string &t1, const std::string &t2)
+int process_setmotor(const std::string &t1, const std::string &t2)
 {
     std::map<std::string,tb6612fng>::iterator i = tb6612fng_list.find(t1);
     if (i == tb6612fng_list.end())
     {
         DBG("Failed to find motor entry "<<t1);
-        return;
+        return 0;
     }
     DBG("Setting motor "<<t1<<" to "<<t2);
 
@@ -638,11 +652,12 @@ void process_setmotor(const std::string &t1, const std::string &t2)
             f->digitalWrite(i->second.in2,1);
         }
     }
+    return 2;
 }
 
 // define a motor controlled by a TB6612FNG
 // defmotor "motorname,pwmPin,in1Pin,in2Pin"
-void process_defmotor(const std::string &t1, const std::string &t2)
+int process_defmotor(const std::string &t1, const std::string &t2)
 {
     DBG("t1 "<<t1<<" t2 "<<t2);
     int j = 0;
@@ -679,7 +694,7 @@ void process_defmotor(const std::string &t1, const std::string &t2)
     if (j != 4)
     {
         DBG("Failed to parse motor definition");
-        return;
+        return 0;
     }
     tb6612fng_list[name].in1 = pin1;
     tb6612fng_list[name].in2 = pin2;
@@ -689,29 +704,31 @@ void process_defmotor(const std::string &t1, const std::string &t2)
     pinmode(pin1, MODE_OUTPUT);
     pinmode(pin2, MODE_OUTPUT);
     pinmode(pwm, MODE_PWM);
+    return 2;
 }
 
 // check for custom commands
-bool process_custom(const std::string &t1, const std::string &t2 = "")
+int process_custom(const std::string &t1, const std::string &t2 = "")
 {
     std::map<std::string,cmdfunc>::const_iterator i = custom_commands.find(t1);
     if (i != custom_commands.end())
     {
-        i->second(t1,t2);
+        return i->second(t1,t2);
         return true;
     }
-    return false;
+    return 0;
 }
 
 // process a single request from scratch
-#define process_thing(__x,__y,__z) if (__x.find(#__y) == 0) process_##__y(__x,__z)
-void process_scratch(const std::string &t1, const std::string &t2 = "")
+#define process_thing(__x,__y,__z) if (__x.find(#__y) == 0) return process_##__y(__x,__z)
+int process_scratch(const std::string &t1, const std::string &t2 = "")
 {
     DBG("t1 "<<t1<<" t2 "<<t2);
-    if (process_custom(t1,t2))
+    int ret = process_custom(t1,t2);
+    if (ret > 0)
     {
         DBG("matched custom command "<<t1);
-        return;
+        return ret;
     }
     process_thing(t1,pin,t2);
     process_thing(t1,adc,t2);
@@ -724,42 +741,7 @@ void process_scratch(const std::string &t1, const std::string &t2 = "")
     process_thing(t1,motor,t2);
     process_thing(t1,power,t2);
     process_thing(t1,defmotor,t2);
-}
-
-// dispatch the given token if required
-// returns false if no further parsing required
-bool dispatch_token(int toknum, bool multivalue, std::string & token, std::string &prevtoken)
-{
-    DBG("toknum "<<toknum<<" multi "<<multivalue<<" token "<<token<<" prev "<<prevtoken);
-    std::transform(token.begin(), token.end(), token.begin(), ::tolower);
-    switch (toknum)
-    {
-        case 0:
-            // message type
-            // discard the whole thing if not "broadcast"
-            if ((token != "broadcast") && (token != "sensor-update"))
-            {
-                return false;
-            }
-            break;
-        case 1:
-            // completed token 1
-            if (multivalue)
-            {
-                process_scratch(token);
-            }
-            else
-            {
-                // not a multivalue token for token1, so cache it
-                prevtoken = token;
-            }
-            break;
-        case 2:
-            // completed token 2
-            process_scratch(prevtoken, token);
-    }
-    token.clear();
-    return true;
+    return 0;
 }
 
 // msg format is
@@ -845,11 +827,14 @@ void read_scratch_message()
     msgbuf[msglen]=0;
 
     DBG("msg is '"<<msgbuf<<"'");
-    std::string token1, token;
+    std::string token;
     i = 0;
     int j = 0;
     bool in_quotes = false;
     bool multivalue = false;
+    std::vector <std::string> tokens;
+    // broadcast message requires splitting on space within spaces
+    bool broadcast = false ; // assume sensor-update for now
     
     while (i < msglen)
     {
@@ -858,36 +843,38 @@ void read_scratch_message()
         {
             if (in_quotes)
             {
-                switch (j)
+                if (broadcast)
                 {
-                    case 0:
-                        // message preamble, stick in token and continue
-                        token.append(1, msgbuf[i]);
-                        break;
-                    case 1:
-                        // space inside quotes means we have a multi value list
-                        // for token1, so we process the token now
-                        process_scratch(token);
-                        token.clear();
-                        multivalue = true;
-                        break;
-                    case 2:
-                        // inside quotes as pert of second token means add to
-                        // value list
-                        token.append(1, msgbuf[i]);
+                    // space within quotes in a broadcast message has to be
+                    // split to a new token
+                    std::transform(token.begin(), token.end(), token.begin(), ::tolower);
+                    tokens.push_back(token);
+                    token.clear();
+                    ++j;
+                } else {
+                    // otherwise we preserve the whitespace within the token
+                    token.append(1, msgbuf[i]);
                 }
             } else {
-                // outside quotes, space means move to next field
+                // outside quotes, space means move to next token
                 DBG("token "<<j<<" is \""<<token<<"\"");
-                if (!dispatch_token(j, multivalue, token, token1))
-                {
-                    DBG("end of token parsing, remaining '"<<(msgbuf+i)<<"'");
-                    break;
+                std::transform(token.begin(), token.end(), token.begin(), ::tolower);
+                if (j == 0) {
+                    // message type, broadcast or sensor-update
+                    if (token == "broadcast") {
+                        broadcast = true;
+                        DBG("Is broadcast");
+                    } else if (token != "sensor-update") {
+                        DBG("Failed to find message type in "<<token);
+                        break;
+                    }
                 }
+                tokens.push_back(token);
+                token.clear();
                 ++j;
             }
-        } else if (msgbuf[i] == '"')
-        {
+        } else if (msgbuf[i] == '"') {
+            // ditch the quotes but record the status
             if (in_quotes)
             {
                 // already in quotes
@@ -902,10 +889,29 @@ void read_scratch_message()
         ++i;
     }
 
-    // dispatch final token
-    if (!token.empty())
-    {
-        dispatch_token(j, (j==1)?true:false, token, token1);
+    // preserve any final token
+    if (!token.empty()) {
+        std::transform(token.begin(), token.end(), token.begin(), ::tolower);
+        tokens.push_back(token);
+        token.clear();
+        ++j;
+    }
+
+    // dispatch the tokens
+    // add a dummy extra token to the end of the tokens so that we can always find
+    // an extra empty token to reference when we reach the end
+    tokens.push_back("");
+    i=1;
+    int k = 0;
+    while (i < j) {
+        DBG("Processing token "<<tokens[i]);
+        k = process_scratch(tokens[i],tokens[i+1]);
+        if (k == 0) {
+            DBG("Failed to parse token "<<i<<" "<<tokens[i]);
+            break;
+        }
+        DBG("Consuming "<<k<<" tokens");
+        i+=k;
     }
 
     free(msgbuf);
