@@ -184,7 +184,7 @@ void wait_for_scratch()
         DBG("waiting for scratch, errno "<<strerror(errno));
         sleep(10);
     }
-    DBG("Connected to scratch");
+    ERR("Connected to scratch");
 }
 
 bool connected_to_firmata()
@@ -213,7 +213,7 @@ bool connect_firmata()
 {
     if (f == nullptr)
     {
-        DBG("Opening firmata");
+        ERR("Opening firmata");
 #ifndef NO_BLUETOOTH
         if (bleio != nullptr)
         {
@@ -228,7 +228,7 @@ bool connect_firmata()
     }
     if (f == nullptr)
     {
-        DBG("failed to instantiate firmata connection");
+        ERR("failed to instantiate firmata connection");
         return false;
     }
 
@@ -237,14 +237,14 @@ bool connect_firmata()
     {
         if (!bleio->isOpen())
         {
-            DBG("firmata not ready, reconnect bluetooth");
+            ERR("Connecting Bluetooth");
             bleio->open();
             if (bleio->isOpen())
             {
-                DBG("bluetooth now connected");
+                ERR("Bluetooth now connected");
                 f->init();
             } else {
-                ERR("bluetooth connect failed");
+                ERR("Bluetooth connect failed");
                 return false;
             }
         }
@@ -256,20 +256,20 @@ bool connect_firmata()
         // can this happen?
         if (serialio->isOpen())
         {
-            DBG("firmata not ready, reconnect serial");
+            ERR("Connecting serial");
             serialio->open();
             if (serialio->isOpen())
             {
-                DBG("serial now connected");
+                ERR("Serial now connected");
                 f->init();
             } else {
-                ERR("serial connect failed");
+                ERR("Serial connect failed");
                 return false;
             }
         }
     }
 
-    DBG("firmata connected and ready");
+    ERR("Firmata connected and ready");
     f->setSamplingInterval(samplingInterval);
     read_pinstates();
     reset_timeout();
@@ -278,7 +278,6 @@ bool connect_firmata()
 
 void disconnect_firmata()
 {
-    // TODO
     std::vector<unsigned char> r;
     r.push_back(FIRMATA_SYSTEM_RESET);
     f->standardCommand(r);
@@ -1167,7 +1166,7 @@ int main(int argc, char * argv[])
             catch (...)
             {
                 // caught exception, close firmata
-                ERR("looks like firmata closed on us");
+                ERR("Firmata connection closed");
                 // wait a while and try again
                 sleep(1);
             }
@@ -1184,6 +1183,5 @@ int main(int argc, char * argv[])
         disconnect_scratch();
     }
     // all done
-    disconnect_scratch();
 }
 
