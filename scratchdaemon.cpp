@@ -66,7 +66,7 @@
 #include "firmble.h"
 #include "firmserial.h"
 
-bool s_debug = 1;
+bool s_debug = 0;
 #define DBG(__x...) \
     if (s_debug) { \
         std::ostringstream __s; \
@@ -115,7 +115,9 @@ void wait_for_scratch()
 }
 
 firmata::Firmata<firmata::Base, firmata::I2C>* f = nullptr;
+#ifndef NO_BLUETOOTH
 firmata::FirmBle* bleio = nullptr;
+#endif
 firmata::FirmSerial* serialio = nullptr;
 
 bool connected_to_firmata()
@@ -125,11 +127,13 @@ bool connected_to_firmata()
         DBG("no firmata");
         return false;
     }
+#ifndef NO_BLUETOOTH
     if ((bleio != nullptr) && (!bleio->isOpen()))
     {
         DBG("bluetooth not connected");
         return false;
     }
+#endif
     if (!f->ready())
     {
         DBG("firmata not ready");
@@ -143,10 +147,12 @@ bool connect_firmata()
     if (f == nullptr)
     {
         DBG("Opening firmata");
+#ifndef NO_BLUETOOTH
         if (bleio != nullptr)
         {
             f = new firmata::Firmata<firmata::Base, firmata::I2C>(bleio);
         }
+#endif
         if (serialio != nullptr)
         {
             f = new firmata::Firmata<firmata::Base, firmata::I2C>(serialio);
@@ -159,6 +165,7 @@ bool connect_firmata()
         return false;
     }
 
+#ifndef NO_BLUETOOTH
     if (bleio != nullptr)
     {
         if (!bleio->isOpen())
@@ -175,6 +182,8 @@ bool connect_firmata()
             }
         }
     }
+#endif
+
     if (serialio != nullptr)
     {
         // can this happen?
@@ -920,13 +929,20 @@ void read_scratch_message()
 void usage(const char * progname, const char * msg = nullptr, int ec = 1)
 {
     if (msg != nullptr) std::cout << msg << std::endl;
-    std::cout << "Usage: "<<progname<<" [-s serialDev] [ -b bdaddr] [-B] [-i reportingInterval] [-H scratchHost] [-P scratchPort] [-h]\n";
+    std::cout << "Usage: "<<progname<<" [-s serialDev] ";
+#ifndef NO_BLUETOOTH
+    std::cout << "[-b bdaddr] [-B] ";
+#endif
+    std::cout << "[-i reportingInterval] [-H scratchHost] [-P scratchPort] [-d] [-h]" << std::endl;
     std::cout << "    -s /dev/ttyS? (use given serial port)" << std::endl;
+#ifndef NO_BLUETOOTH
     std::cout << "    -b bdaddr (use given bluetooth device)" << std::endl;
     std::cout << "    -B (use first available bluetooth device)" << std::endl;
+#endif
     std::cout << "    -i N (use given reporting interval in ms, default 100ms)" << std::endl;
     std::cout << "    -H H (talk to scratch at given host, default localhost)" << std::endl;
     std::cout << "    -P P (talk to scratch on given port, default 42001)" << std::endl;
+    std::cout << "    -d (enable debug messages)" << std::endl;
     std::cout << "    -h show this help" << std::endl;
     std::cout << std::endl;
     exit(ec);
@@ -940,7 +956,7 @@ int main(int argc, char * argv[])
     int conntype = 0;
     memset(&myPins[0], 0, sizeof(myPins));
 
-    while ((c = getopt(argc, argv, "s:b:Bi:H:P:h")) >= 0)
+    while ((c = getopt(argc, argv, "s:b:Bi:H:P:dh")) >= 0)
     {
         switch (c)
         {
@@ -948,6 +964,7 @@ int main(int argc, char * argv[])
                 port = optarg;
                 conntype = 1;
                 break;
+#ifndef NO_BLUETOOTH
             case 'b': // firmata specified bluetooth device
                 port = optarg;
                 conntype = 2;
@@ -955,6 +972,7 @@ int main(int argc, char * argv[])
             case 'B': // firmata first bluetooth device
                 conntype = 3;
                 break;
+#endif
             case 'i': // reporting interval
                 samplingInterval = atoi(optarg);
                 break;
@@ -963,6 +981,9 @@ int main(int argc, char * argv[])
                 break;
             case 'P': // scratch port
                 scratch_port = atoi(optarg);
+                break;
+            case 'd': // enable debug
+                s_debug = 1;
                 break;
             case 'h':
                 usage(argv[0], nullptr, 0);
@@ -996,6 +1017,7 @@ int main(int argc, char * argv[])
             f = new firmata::Firmata<firmata::Base, firmata::I2C>(serialio);
             break;
 
+#ifndef NO_BLUETOOTH
         case 3: // first bluetooth
             try
             {
@@ -1028,6 +1050,7 @@ int main(int argc, char * argv[])
                 usage(argv[0],e.c_str());
             }
             break;
+#endif
 
     }
     // set up the scratch address

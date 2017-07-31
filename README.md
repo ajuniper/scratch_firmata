@@ -35,3 +35,16 @@ e.g. "setmotor leftmotor 50", "setmotor rightmotor -25", "setmotor leftmotor sto
 Uses the Firmata library https://github.com/simlrh/firmatacpp and for Bluetooth support, https://github.com/edrosten/libblepp.
 
 Tested only on Galileo 101.
+
+Building:
+ * Download and build firmatacpp with Bluetooth support from the above location.  The makefile assumes it will be unpacked and built in ~/firmatacpp-master/ - override this by setting firmatadir=/x/x/x on the Make invocation if required.  Note that at present the code there doesn't yet include Bluetooth support so you make need to download from my fork https://github.com/ajuniper/firmatacpp instead.
+ * Run "make"
+ * Or run "make NO_BLUETOOTH=1" in order to build without Bluetooth support
+
+Running:
+ * ./scratchdaemon -h (show usage info)
+ * sudo ./scratchdaemon -i 500 -B (connects to first Bluetooth Firmata found)
+ * sudo ./scratchdaemon -i 500 -b 11:22:33:44:55:66 (connects to specified Bluetooth device)
+ * ./scratchdaemon -i 500 -s /dev/ttyUSB0 (connects to Firmata via specified serial port)
+
+

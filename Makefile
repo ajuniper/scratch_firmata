@@ -7,6 +7,7 @@ CPPFLAGS+= -I$(firmatadir)
 CPPFLAGS+= -I$(firmatadir)/vendor/serial/include
 CPPFLAGS+= -I$(bluedir)/include
 CPPFLAGS+= -g3 -std=gnu++14
+CPPFLAGS+= $(if $(NO_BLUETOOTH),-DNO_BLUETOOTH)
 
 LDFLAGS+= -L$(firmatadir)
 LDFLAGS+= -L$(firmatadir)/vendor/serial
