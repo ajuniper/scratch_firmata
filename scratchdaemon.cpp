@@ -321,7 +321,7 @@ bool connect_firmata(int type, const std::string & port)
     if (serialio != nullptr)
     {
         // can this happen?
-        if (serialio->isOpen())
+        if (!serialio->isOpen())
         {
             ERR("Connecting serial");
             serialio->open();
@@ -1175,7 +1175,16 @@ int main(int argc, char * argv[])
             if (!connected_to_firmata())
             {
                 DBG("Connecting to firmata");
-                connect_firmata(conntype, port);
+                try
+                {
+                    connect_firmata(conntype, port);
+                }
+                catch (...)
+                {
+                    // if the connect fails then try again
+                    DBG("connect failed");
+                    continue;
+                }
             }
 
             int n = do_poll();
