@@ -61,6 +61,7 @@
 #include <algorithm>
 #include <cctype>
 #include <map>
+#include <limits.h>
 
 #include "firmata.h"
 #include "firmble.h"
@@ -444,9 +445,28 @@ void pinmode(uint8_t pin, uint8_t mode)
 }
 
 // parse the pin number from a subset of the string
+// returns maxint if not a valid pin number or does not end
+// at the given position
+#define BADNUMBER (UINT_MAX)
+#define BADCMD (UINT_MAX - 1)
 unsigned int getpin(const std::string &s, size_t ofs, size_t end = std::string::npos)
 {
-    unsigned int ret = std::stoul(s.substr(ofs, end));
+    size_t newend = std::string::npos;
+    std::string n(s.substr(ofs,end));
+    unsigned int ret;
+    try
+    {
+        ret = std::stoul(n,&newend);
+    }
+    catch (...)
+    {
+        DBG("Failed to parse pin from "<<n);
+        return BADNUMBER;
+    }
+    if (newend != n.size()) {
+        DBG("didn't consume all chars from "<<n);
+        return BADCMD;
+    }
     DBG("from "<<s<<" got pin "<<ret);
     return ret;
 }
@@ -458,7 +478,7 @@ unsigned int getpin(const std::string &s, size_t ofs, size_t end = std::string::
 // value absent = parse from number
 int process_pin(const std::string &t1, const std::string &t2)
 {
-    unsigned int value;
+    unsigned int value = UINT_MAX;
     int ret = 2; // assume consume 2 tokens
     size_t end = std::string::npos;
     DBG("Parsing from "<<t1<<" "<<t2);
@@ -470,18 +490,27 @@ int process_pin(const std::string &t1, const std::string &t2)
         value = 1;
         end = t1.size() - 2;
         ret = 1;
-    } else if ((t2 == "off") || (t2 == "low") || (t2 == "0")) {
-        value = 0;
-    } else if ((t2 == "on") || (t2 == "high") || (t2 == "1")) {
-        value = 1;
-    } else if (!t2.empty()) {
-        ERR("Failed to parse required pin state from "<<t2);
-        return 0;
-    } else {
-        ERR("Failed to parse required pin state from "<<t1);
-        return 0;
     }
     unsigned int pin = getpin(t1,3,end);
+    if (pin == BADNUMBER) {
+        ERR("Failed to parse required pin state from "<<t1);
+        return 0;
+    } else if (pin == BADCMD) {
+        ERR("Not a valid command from "<<t1);
+        return 0;
+    }
+    if (value == UINT_MAX) {
+        // need second token
+        if ((t2 == "off") || (t2 == "low") || (t2 == "0")) {
+            value = 0;
+        } else if ((t2 == "on") || (t2 == "high") || (t2 == "1")) {
+            value = 1;
+        } else if (!t2.empty()) {
+            ERR("Failed to parse required pin state from "<<t2);
+            return 0;
+        }
+    }
+
     DBG("pin "<<pin<<" set to "<<value);
     pinmode(pin, MODE_OUTPUT);
     myPins[pin] = false;
@@ -496,8 +525,7 @@ int process_pin(const std::string &t1, const std::string &t2)
 // pin provided is analog pin we must map to digital
 int process_adc(const std::string &t1, const std::string &t2)
 {
-    // default to enable
-    unsigned int value = 1;
+    unsigned int value = UINT_MAX;
     int ret = 2;
     size_t end = std::string::npos;
     DBG("Parsing from "<<t1<<" "<<t2);
@@ -505,15 +533,27 @@ int process_adc(const std::string &t1, const std::string &t2)
         value = 0;
         end = t1.size() - 3;
         ret = 1;
-    } else if (t2 == "off") {
-        value = 0;
-    } else if (t2 == "on") {
-        value = 1;
-    } else if (!t2.empty()) {
-        ERR("Failed to parse required pin state from "<<t2);
-        return 0;
     }
     unsigned int apin = getpin(t1,3,end);
+    if (apin == BADNUMBER) {
+        ERR("Failed to parse required pin state from "<<t1);
+        return 0;
+    } else if (apin == BADCMD) {
+        ERR("Not a valid command from "<<t1);
+        return 0;
+    }
+    if (value == UINT_MAX) {
+        // if no clue yet then try second arg
+        if (t2 == "off") {
+            value = 0;
+        } else if (t2 == "on") {
+            value = 1;
+        } else {
+            // assume command without parameters
+            value = 1;
+            ret = 1;
+        }
+    }
     unsigned int pin = f->getPinFromAnalogChannel(apin);
     DBG("pin "<<pin<<" apin "<<apin<<" value "<<value);
     pinmode(pin, MODE_ANALOG);
@@ -528,7 +568,7 @@ int process_adc(const std::string &t1, const std::string &t2)
 // value absent = parse from number
 int process_config(const std::string &t1, const std::string &t2)
 {
-    unsigned int value;
+    unsigned int value = UINT_MAX;
     int ret = 2;
     size_t end = std::string::npos;
     DBG("Parsing from "<<t1<<" "<<t2);
@@ -540,18 +580,28 @@ int process_config(const std::string &t1, const std::string &t2)
         value = MODE_INPUT;
         end = t1.size() - 2;
         ret = 1;
-    } else if (t2 == "out") {
-        value = MODE_OUTPUT;
-    } else if (t2 == "in") {
-        value = MODE_INPUT;
-    } else if (!t2.empty()) {
-        ERR("Failed to parse required pin state from "<<t2);
-        return 0;
-    } else {
-        ERR("Failed to parse required pin state from "<<t1);
-        return 0;
     }
     unsigned int pin = getpin(t1,6,end);
+    if (pin == BADNUMBER) {
+        ERR("Failed to parse required pin state from "<<t1);
+        return 0;
+    } else if (pin == BADCMD) {
+        ERR("Not a valid command from "<<t1);
+        return 0;
+    }
+    if (value == UINT_MAX) {
+        if (t2 == "out") {
+            value = MODE_OUTPUT;
+        } else if (t2 == "in") {
+            value = MODE_INPUT;
+        } else if (!t2.empty()) {
+            ERR("Failed to parse required pin state from "<<t2);
+            return 0;
+        } else {
+            ERR("Failed to parse required pin state from "<<t1);
+            return 0;
+        }
+    }
     DBG("pin "<<pin<<" value "<<value);
     pinmode(pin, value);
     if (value == MODE_INPUT) {
@@ -567,6 +617,13 @@ int process_pwm(const std::string &t1, const std::string &t2)
 {
     DBG("Parsing from "<<t1<<" "<<t2);
     unsigned int pin = getpin(t1,3);
+    if (pin == BADNUMBER) {
+        ERR("Failed to parse required pin state from "<<t1);
+        return 0;
+    } else if (pin == BADCMD) {
+        ERR("Not a valid command from "<<t1);
+        return 0;
+    }
     unsigned int value = std::stoul(t2);
     DBG("pin "<<pin<<" value "<<value);
     pinmode(pin, MODE_PWM);
@@ -581,6 +638,13 @@ int process_servo(const std::string &t1, const std::string &t2)
 {
     DBG("Parsing from "<<t1<<" "<<t2);
     unsigned int pin = getpin(t1,5);
+    if (pin == BADNUMBER) {
+        ERR("Failed to parse required pin state from "<<t1);
+        return 0;
+    } else if (pin == BADCMD) {
+        ERR("Not a valid command from "<<t1);
+        return 0;
+    }
     unsigned int value = std::stoul(t2);
     DBG("pin "<<pin);
     pinmode(pin, MODE_SERVO);
@@ -627,6 +691,13 @@ void process_pin_percent(const std::string &t1, const std::string &t2, size_t ba
     }
     else {
         pin = getpin(t1,baseLen);
+        if (pin == BADNUMBER) {
+            ERR("Failed to parse required pin state from "<<t1);
+            return;
+        } else if (pin == BADCMD) {
+            ERR("Not a valid command from "<<t1);
+            return;
+        }
     }
     process_pin_percent(pin, t2, mode);
 }
