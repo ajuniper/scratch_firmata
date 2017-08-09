@@ -1262,11 +1262,11 @@ int main(int argc, char * argv[])
             }
 
             int n = do_poll();
-            f->parse();
 
             // firmata will throw if not connected
             try
             {
+                f->parse();
                 if (n > 0)
                 {
                     // scratch message arrived
