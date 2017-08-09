@@ -62,9 +62,12 @@
 #include <cctype>
 #include <map>
 #include <limits.h>
+#include <functional>
 
 #include "firmata.h"
+#ifndef NO_BLUETOOTH
 #include "firmble.h"
+#endif
 #include "firmserial.h"
 
 bool s_debug = 0;
