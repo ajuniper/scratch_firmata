@@ -1,0 +1,10 @@
+# cannot rename USB device so just take permissions away
+# so that scratch cannot mess with it
+# copy this file to /etc/udev/rules.d
+# also copy scratchdaemon.sh to /usr/local/bin/scratchdaemon.sh
+ACTION=="add", KERNEL=="ttyUSB0", MODE="0600", RUN+="/usr/local/bin/scratchdaemon.sh inudev -s /dev/%k -i 100"
+ACTION=="remove", KERNEL=="ttyUSB0", RUN+="/usr/local/bin/scratchdaemon.sh kill -s /dev/%k"
+
+ACTION=="add", SUBSYSTEM=="bluetooth", RUN+="/usr/local/bin/scratchdaemon.sh inudev -B -i 100"
+ACTION=="remove", SUBSYSTEM=="bluetooth", RUN+="/usr/local/bin/scratchdaemon.sh kill -B"
+
