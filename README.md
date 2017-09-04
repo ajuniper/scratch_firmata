@@ -50,4 +50,5 @@ Running:
  * sudo ./scratchdaemon -i 500 -b 11:22:33:44:55:66 (connects to specified Bluetooth device)
  * ./scratchdaemon -i 500 -s /dev/ttyUSB0 (connects to Firmata via specified serial port)
 
+Alternatively copy the udev rules, the shell script from this folder and the executable to /etc/udev/rules.d and /usr/local/bin for auto start when firmata devices, or Bluetooth devices, are connected.
 
