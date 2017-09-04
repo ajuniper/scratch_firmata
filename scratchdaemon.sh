@@ -1,4 +1,5 @@
 #!/bin/bash
+# copy this file to /usr/local/bin
 exec >>/var/log/scratchdaemon.log 2>&1
 set -x
 if [[ $1 = inudev ]] ; then
