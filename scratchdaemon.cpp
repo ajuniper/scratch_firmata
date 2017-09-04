@@ -455,7 +455,7 @@ void pinmode(uint8_t pin, uint8_t mode)
 unsigned int getpin(const std::string &s, size_t ofs, size_t end = std::string::npos)
 {
     size_t newend = std::string::npos;
-    std::string n(s.substr(ofs,end));
+    std::string n(s.substr(ofs,end-ofs));
     unsigned int ret;
     try
     {
@@ -467,7 +467,7 @@ unsigned int getpin(const std::string &s, size_t ofs, size_t end = std::string::
         return BADNUMBER;
     }
     if (newend != n.size()) {
-        DBG("didn't consume all chars from "<<n);
+        DBG("only consumed "<<newend<<" chars but wanted to use "<<n.size()<<" "<< end<<" chars from "<<n);
         return BADCMD;
     }
     DBG("from "<<s<<" got pin "<<ret);
@@ -1022,6 +1022,7 @@ void read_scratch_message()
     tokens.push_back("");
     i=1;
     int k = 0;
+    if (bleio) { bleio->write_batch(true); }
     while (i < j) {
         DBG("Processing token "<<tokens[i]);
         k = process_scratch(tokens[i],tokens[i+1]);
@@ -1034,6 +1035,7 @@ void read_scratch_message()
         DBG("Consuming "<<k<<" tokens");
         i+=k;
     }
+    if (bleio) { bleio->write_batch(false); }
 
     free(msgbuf);
 }
