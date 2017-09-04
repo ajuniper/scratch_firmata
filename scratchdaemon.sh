@@ -16,6 +16,8 @@ if [[ $1 = kill ]] ; then
 fi
 
 while true ; do
+    SECONDS=0
     /usr/local/bin/scratchdaemon "$@"
+    [[ $SECONDS -ge 10 ]] || sleep $((10-SECONDS))
     echo "restarting..."
 done
