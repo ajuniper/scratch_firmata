@@ -1,5 +1,5 @@
 # TODO better way to find firmatacpp
-firmatadir?=$(HOME)/firmatacpp-master
+firmatadir?=$(HOME)/firmatacpp
 bluedir?=${firmatadir}/libblepp-prefix
 
 # on Ubuntu 14.04 set this to c++1y
