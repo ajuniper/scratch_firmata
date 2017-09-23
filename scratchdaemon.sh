@@ -1,6 +1,7 @@
 #!/bin/bash
 # copy this file to /usr/local/bin
 exec >>/var/log/scratchdaemon.log 2>&1
+
 set -x
 if [[ $1 = inudev ]] ; then
     shift
@@ -14,6 +15,10 @@ if [[ $1 = kill ]] ; then
     kill $(ps --no-headers -o pid -C "scratchdaemon $*")
     exit
 fi
+
+lock=/var/run/scratchdaemon.$(printf "%s_" "$@")
+exec 9>$lock
+flock -n 9 || { echo "Already locked, exit" ; exit 1 ; }
 
 while true ; do
     SECONDS=0
