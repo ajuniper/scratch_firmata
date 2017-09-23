@@ -272,6 +272,10 @@ bool connect_firmata(int type, const std::string & port)
                     delete bleio;
                 }
                 bleio = new firmata::FirmBle(port.c_str());
+                if (s_debug) {
+                    DBG("enabling debug");
+                    bleio->enableDebug();
+                }
             }
             catch (...)
             {
@@ -426,7 +430,7 @@ void pinmode(uint8_t pin, uint8_t mode)
     if (setreporting)
     {
         // set the reporting state accordingly
-        if (mode == MODE_INPUT)
+        if ((mode == MODE_INPUT) || (mode == MODE_PULLUP))
         {
             DBG("enable digital reporting");
             f->reportDigitalPin(pin,1);
@@ -579,6 +583,10 @@ int process_config(const std::string &t1, const std::string &t2)
         value = MODE_OUTPUT;
         end = t1.size() - 3;
         ret = 1;
+    } else if (ends_in(t1,pu)) {
+        value = MODE_PULLUP;
+        end = t1.size() - 2;
+        ret = 1;
     } else if (ends_in(t1,in)) {
         value = MODE_INPUT;
         end = t1.size() - 2;
@@ -597,6 +605,8 @@ int process_config(const std::string &t1, const std::string &t2)
             value = MODE_OUTPUT;
         } else if (t2 == "in") {
             value = MODE_INPUT;
+        } else if (t2 == "pu") {
+            value = MODE_PULLUP;
         } else if (!t2.empty()) {
             ERR("Failed to parse required pin state from "<<t2);
             return 0;
@@ -607,7 +617,7 @@ int process_config(const std::string &t1, const std::string &t2)
     }
     DBG("pin "<<pin<<" value "<<value);
     pinmode(pin, value);
-    if (value == MODE_INPUT) {
+    if ((value == MODE_INPUT) || (value == MODE_PULLUP)) {
         myPins[pin] = true;
     }
     return ret;
@@ -1109,6 +1119,7 @@ void write_scratch()
                     write_scratch_message("sensor-update", "adc", f->getPinAnalogChannel(i), f->analogRead(i));
                     break;
                 case MODE_INPUT:
+                case MODE_PULLUP:
                     write_scratch_message("sensor-update", "input", i, f->digitalRead(i));
                     break;
             }

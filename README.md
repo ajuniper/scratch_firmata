@@ -13,7 +13,7 @@ Variables:
  * allpins 0/1/on/off/high/low
  * pwmNN xx
  * servoNN xx
- * configNN xx (xx=out/in)
+ * configNN xx (xx=out/in/pu)
  * motorNN xx (motorA = motor11 / motorB = motor12, xx is %)
  * powerNN xx (synonym for motor)
 
@@ -22,6 +22,7 @@ Broadcasts:
  * pinNNoff
  * configNNout
  * configNNin
+ * configNNpu
  * adcNN (enable ADC reporting for pin NN)
  * adcNNoff
  * allon
