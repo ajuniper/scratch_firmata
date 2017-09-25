@@ -16,7 +16,7 @@ if [[ $1 = kill ]] ; then
     exit
 fi
 
-lock=/var/run/scratchdaemon.$(printf "%s_" "$@")
+lock=/var/run/scratchdaemon.$(printf "%s_" "${@//[^a-zA-Z0-9._-]/_}")
 exec 9>$lock
 flock -n 9 || { echo "Already locked, exit" ; exit 1 ; }
 
